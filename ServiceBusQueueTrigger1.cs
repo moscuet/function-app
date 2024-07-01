@@ -96,35 +96,35 @@ namespace Company.Function
         }
 
 
-private async Task UnregisterEventAsync(string eventId, string userId)
-{
-    using (var connection = new NpgsqlConnection(ConnectionString))
-    {
-        await connection.OpenAsync();
-        using (var transaction = connection.BeginTransaction())
+        private async Task UnregisterEventAsync(string eventId, string userId)
         {
-            try
+            using (var connection = new NpgsqlConnection(ConnectionString))
             {
-                var eventGuid = Guid.Parse(eventId);
-                
-                var updateEventQuery = "UPDATE \"Events\" SET \"RegisteredCount\" = \"RegisteredCount\" - 1 WHERE \"Id\" = @EventId AND \"RegisteredCount\" > 0";
-                var deleteRegistrationQuery = "DELETE FROM \"EventRegistrations\" WHERE \"EventId\" = @EventId AND \"UserId\" = @UserId AND \"Status\" = 'Registered'";
-                
-                await connection.ExecuteAsync(updateEventQuery, new { EventId = eventGuid }, transaction);
-                await connection.ExecuteAsync(deleteRegistrationQuery, new { EventId = eventGuid, UserId = userId }, transaction);
+                await connection.OpenAsync();
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        var deleteRegistrationQuery = "DELETE FROM \"EventRegistrations\" WHERE \"EventId\" = @EventId AND \"UserId\" = @UserId AND \"Status\" = 'Registered';";
+                        var result = await connection.ExecuteAsync(deleteRegistrationQuery, new { EventId = eventId, UserId = userId }, transaction);
 
-                transaction.Commit();
-                _logger.LogInformation($"Unregistered User {userId} from Event {eventId}. Spots and registration updated.");
-            }
-            catch (Exception ex)
-            {
-                transaction.Rollback();
-                _logger.LogError($"Error during unregistration: {ex.Message}");
-                throw;
+                        var updateEventQuery = "UPDATE \"Events\" SET \"RegisteredCount\" = \"RegisteredCount\" - 1 WHERE \"Id\" = @EventId AND \"RegisteredCount\" > 0;";
+                        await connection.ExecuteAsync(updateEventQuery, new { EventId = Guid.Parse(eventId) }, transaction);
+
+                        _logger.LogInformation($"Successfully deleted registration for User {userId} from Event {eventId}. Event count decremented.");
+
+
+                        transaction.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        transaction.Rollback();
+                        _logger.LogError($"Error during unregistration: {ex.Message}");
+                        throw;
+                    }
+                }
             }
         }
-    }
-}
 
 
     }
