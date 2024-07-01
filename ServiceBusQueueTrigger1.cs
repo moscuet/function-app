@@ -96,49 +96,35 @@ namespace Company.Function
         }
 
 
-
-        private async Task UnregisterEventAsync(string eventId, string userId)
+private async Task UnregisterEventAsync(string eventId, string userId)
+{
+    using (var connection = new NpgsqlConnection(ConnectionString))
+    {
+        await connection.OpenAsync();
+        using (var transaction = connection.BeginTransaction())
         {
-            using (var connection = new NpgsqlConnection(ConnectionString))
+            try
             {
-                await connection.OpenAsync();
-                using (var transaction = connection.BeginTransaction())
-                {
-                    try
-                    {
-                        var eventGuid = Guid.Parse(eventId);
-                        var eventQuery = "SELECT * FROM \"Events\" WHERE \"Id\" = @EventId FOR UPDATE";
-                        var eventDetails = await connection.QuerySingleOrDefaultAsync(eventQuery, new { EventId = eventGuid }, transaction);
+                var eventGuid = Guid.Parse(eventId);
+                
+                var updateEventQuery = "UPDATE \"Events\" SET \"RegisteredCount\" = \"RegisteredCount\" - 1 WHERE \"Id\" = @EventId AND \"RegisteredCount\" > 0";
+                var deleteRegistrationQuery = "DELETE FROM \"EventRegistrations\" WHERE \"EventId\" = @EventId AND \"UserId\" = @UserId AND \"Status\" = 'Registered'";
+                
+                await connection.ExecuteAsync(updateEventQuery, new { EventId = eventGuid }, transaction);
+                await connection.ExecuteAsync(deleteRegistrationQuery, new { EventId = eventGuid, UserId = userId }, transaction);
 
-                        if (eventDetails == null)
-                        {
-                            throw new Exception("Event not found.");
-                        }
-
-                        if (eventDetails.RegisteredCount >= eventDetails.TotalSpots)
-                        {
-                            throw new Exception("No available spots.");
-                        }
-
-                        var parameters = new { EventId = eventGuid, UserId = userId, RegistrationTime = DateTime.UtcNow, Status = "Registered" };
-                        var insertRegistrationQuery = "INSERT INTO \"EventRegistrations\" (\"EventId\", \"UserId\", \"RegistrationTime\", \"Status\") VALUES (@EventId, @UserId, @RegistrationTime, @Status)";
-
-                        await connection.ExecuteAsync(insertRegistrationQuery, parameters, transaction);
-
-                        // Increment the RegisteredCount
-                        var updateEventQuery = "UPDATE \"Events\" SET \"RegisteredCount\" = \"RegisteredCount\" + 1 WHERE \"Id\" = @EventId";
-                        await connection.ExecuteAsync(updateEventQuery, new { EventId = eventGuid }, transaction);
-                        transaction.Commit();
-                    }
-                    catch (Exception ex)
-                    {
-                        transaction.Rollback();
-                        _logger.LogError($"Error during registration: {ex.Message}");
-                        throw;
-                    }
-                }
+                transaction.Commit();
+                _logger.LogInformation($"Unregistered User {userId} from Event {eventId}. Spots and registration updated.");
+            }
+            catch (Exception ex)
+            {
+                transaction.Rollback();
+                _logger.LogError($"Error during unregistration: {ex.Message}");
+                throw;
             }
         }
+    }
+}
 
 
     }
