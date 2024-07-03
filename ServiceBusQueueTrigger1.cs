@@ -1,6 +1,7 @@
 using Azure.Messaging.ServiceBus;
 using Dapper;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -9,11 +10,12 @@ namespace Company.Function
     public class ServiceBusQueueTrigger1
     {
         private readonly ILogger<ServiceBusQueueTrigger1> _logger;
-        private const string ConnectionString = "Host=c-azure-cosmos-db-psql.fhxpikxvze4hpu.postgres.cosmos.azure.com;Port=5432;Database=test-cosmos-db;Username=citus;Password=testcosmosdb1955@;SslMode=Require";
+        private readonly string _connectionString;
 
-        public ServiceBusQueueTrigger1(ILogger<ServiceBusQueueTrigger1> logger)
+        public ServiceBusQueueTrigger1(ILogger<ServiceBusQueueTrigger1> logger, IConfiguration configuration)
         {
             _logger = logger;
+            _connectionString = configuration["DatabaseConnectionString"]; 
         }
 
         [Function(nameof(ServiceBusQueueTrigger1))]
@@ -42,7 +44,6 @@ namespace Company.Function
                     _logger.LogInformation($"Unregistered User {registration.UserId} from Event {registration.EventId}");
                 }
 
-                // Complete the message
                 await messageActions.CompleteMessageAsync(message);
             }
             catch (Exception ex)
@@ -54,7 +55,7 @@ namespace Company.Function
 
         private async Task RegisterEventAsync(string eventId, string userId)
         {
-            using (var connection = new NpgsqlConnection(ConnectionString))
+            using (var connection = new NpgsqlConnection(_connectionString))
             {
                 await connection.OpenAsync();
                 using (var transaction = connection.BeginTransaction())
@@ -80,7 +81,6 @@ namespace Company.Function
 
                         await connection.ExecuteAsync(insertRegistrationQuery, parameters, transaction);
 
-                        // Increment the RegisteredCount
                         var updateEventQuery = "UPDATE \"Events\" SET \"RegisteredCount\" = \"RegisteredCount\" + 1 WHERE \"Id\" = @EventId";
                         await connection.ExecuteAsync(updateEventQuery, new { EventId = eventGuid }, transaction);
                         transaction.Commit();
@@ -98,7 +98,7 @@ namespace Company.Function
 
         private async Task UnregisterEventAsync(string eventId, string userId)
         {
-            using (var connection = new NpgsqlConnection(ConnectionString))
+            using (var connection = new NpgsqlConnection(_connectionString))
             {
                 await connection.OpenAsync();
                 using (var transaction = connection.BeginTransaction())
